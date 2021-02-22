@@ -1,0 +1,13 @@
+name: PredictWord
+title: PredictWord
+username:
+account: valensioleonard
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2665966
+bundleId: 3521358
+url: https://valensioleonard.shinyapps.io/PredictWord/
+when: 1597562618.61572
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: functions.R
