@@ -1,0 +1,241 @@
+---
+title: "Milestone Report Coursera Data Science Capstone"
+output:
+  html_document:
+    df_print: paged
+author: "Leonard"
+date: "8/8/2020"
+---
+```{r setup, echo=FALSE, message= F}
+    knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Leonard/Desktop/R COURSE SPECIALIZATION/Natural_Language_Processing_Project/")) 
+```
+
+```{r, message=FALSE, echo=FALSE}
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(quanteda)
+library(tm)
+library(data.table)
+```
+
+## Executive Summary
+
+In this project, we are taking a raw data of text from 3 different sources(blogs, twitter, and news) to generate a predictive model that can predict what words that user possibly want to write based on previous word. 
+
+This particular report is a milestone for the first and second task of this project from Data Science Specialization from coursera. 
+
+This analysis focuses on generating information from the raw data, cleaning the data, and doing some exploratory work. 
+
+## Task 1: Getting and Cleaning the Data 
+First we will need to download the data and load it into R. 
+
+I would recommend setting up your working directory as tidy as you can to avoid confusion. I have prepared a data folder to save all the data needed for this project. 
+
+```{r, eval=FALSE}
+if(!file.exists("Data")){
+        dir.create("Data", path = "./")
+}
+```
+
+So let us begin by downloading the data and save it into Data folder in your working directory.
+
+```{r, eval=FALSE}
+url <- "https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip"
+
+if(!file.exists("./Data/final")){
+        download.file(url, destfile = "./Data/Capstone.zip")
+unzip("./Data/Capstone.zip")
+}
+```
+
+Now that we have our data in our working directory, you can see whats inside the data. In this project, we are only going to use en_US data inside the final folder. So lets list all files path into R to make things easier.
+
+```{r, eval=FALSE}
+fileList <- list.files("./Data/final/en_US/", full.names = TRUE)
+fileList
+```
+
+Lets load it into R !
+```{r, cache=TRUE, cache=TRUE, eval=FALSE}
+blogs <- readLines(fileList[1], encoding = "UTF-8", skipNul = TRUE)
+news <- readLines(fileList[2], encoding = "UTF-8", skipNul = TRUE)
+twitter <- readLines(fileList[3], encoding = "UTF-8", skipNul = TRUE)
+```
+
+### General Statistics about the data
+
+Great! Now, lets gather information about those 3 data that we are going to use.
+
+```{r, cache=TRUE, warning=FALSE, echo=FALSE}
+info <- readRDS("./Reports/DataInfo.rds")
+info
+```
+
+As you can see, the data is massive in size. So we need to develop a certain strategy to process this raw data. 
+
+
+## Cleaning the data
+
+An important step before we even consider analyzing the data is to clean it first. The goal of this segment is to have a processed data without profanity and is ready to be analyzed.
+
+First thing first, let us decide what and how many data we are going to use. I am going to combine all three data with a some proportion in it. 
+
+- 20% from blogs
+- 80% from news
+- 7.5% from twitter
+
+The reasoning behind this decision is blogs and news offer a more structured and formal text for us to handle. It will also have less abbreviation, which is beneficial for our task. Also considering the size of each respective data. 
+
+Next I will do some sampling from the data and put it into a new file.
+
+```{r, warning=FALSE, cache=TRUE, eval=FALSE}
+set.seed(1)
+
+generate <- function(filelist, trainP, testP){
+  data <- as.character()
+  data <- c(data, readLines(filelist[1], 899288 * 0.2, skipNul = T, encoding = "UTF-8"))
+  data <- c(data, readLines(filelist[2], 77259 * 0.8, skipNul = T, encoding = "UTF-8"))
+  data <- c(data, readLines(filelist[3], 2360148 * 0.075, skipNul = T, encoding = "UTF-8"))
+  
+  len <- length(data)
+  trInd <- ifelse(rbinom(len, 1, prob = trainP) == 1, TRUE, FALSE)
+  left <- data[!trInd]
+  len2 <- length(left)
+  tsInd <- ifelse(rbinom(len2, 1 ,prob = testP) == 1, TRUE, FALSE)
+  
+  list(
+    data[trInd],
+    left[tsInd]
+  )
+}
+result <- generate(fileList, 0.90, 0.10)
+train <- result[[1]]
+test <- result[[2]]
+```
+
+Next we want to remove lines that have profanity. To remove profanity, I've used collection of profanity words from this link.
+
+[profanity](https://www.cs.cmu.edu/~biglou/resources/bad-words.txt)
+
+Load it into R and simply remove lines that include profanity in it using these following lines.
+
+```{r, eval=FALSE}
+profan <- function(data){
+profan <- readLines("./Data/PROFANITY.txt")
+data <- data[!data %in% profan]
+return(data)
+}
+train <- profan(train)
+test <- profan(test)
+```
+
+Last but not least, remove all unused character that may hinder our exploratory and analysis. 
+```{r, cache = TRUE, eval =FALSE}
+clean <- function(data){
+data <- tolower(data)
+data <- gsub("[^[:alnum:][:space:]'`]", " ", data)
+data <- removeNumbers(data)
+data <- stripWhitespace(data)
+data <- iconv(data, "UTF-8", "ASCII", sub = "")
+return(data)
+}
+
+train <- clean(train)
+test <- clean(test)
+```
+
+After having a cleaned data, we can save it into a file so we don't have to do all of that again when we start R. 
+```{r, eval=FALSE}
+writeLines("./Data/training.txt", text = train)
+writeLines("./Data/testing.txt", text = test)
+```
+
+## Task 2: Exploratory Data Analysis
+### Finding Word Frequencies
+
+Based on our Statistical Inference Class, we can take a sample out of the population. The idea is this sample can represent our data population.  So lets do a sampling based on our training data to do some exploratory work. 
+
+```{r}
+train <- readLines("./Data/testing.txt")
+```
+
+First thing first, I wanted to take a look at what words showed up the most. We can do this by using `tokens` function from `quanteda` package.
+
+```{r}
+df <- data.frame(file1 = as.character(), Freq = as.numeric())
+
+for (i in 1:4) {
+    file1 <-  sample(train, 10^i) %>% tokens(what = "word") %>% unlist() %>% table(.) %>% sort(., decreasing = T)
+    
+    df <- rbind(df, data.frame(file1[1:15]))
+}
+
+df <- cbind(df, iter = rep(1:4, each = 15))
+names(df)[1] <- "word" 
+p1 <- ggplot(df, aes(x = iter, y = Freq, color = word)) + geom_line() + labs(x = "10^i samples", y = "Word Appearance")
+ggplotly(p1)
+```
+
+We can conclude that based on our simulation using 10 to 10^4 sample from combined data. The word "one" and "will" came up as the word that appeared the most. But we shall make another graph to make things easier to see.
+
+**The most important thing** that we can conclude from this graph is that the rate in which a word appeared grew steadily across sample size, there are no random patterns for those words so we can assume that if we continue to add the sample size, the word ranking will probably stay the same if not changed only by a little bit. 
+
+This time we will use 2*10^4  samples to plot graph of words that appeared the most.
+
+```{r}
+set.seed(12)
+for (i in 1:3) {
+    most <- train %>% tokens(what = "word") %>% unlist() %>% table() %>% sort(decreasing = T)
+}
+```
+
+Now that we have the file, we can use `ggplot` function to plot our data and `plotly` to make it interactive. 
+
+```{r}
+most <- data.frame(most[1:15])
+names(most)[1] <- "Word"
+
+g <- ggplot(data.frame(most), aes(x = Word , y = Freq))+ geom_col() + labs(x = "" ,y = "Freq", title = paste("observation for word that appeared the most"))+ theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(g)
+```
+
+Good, it is pretty consistent with what our findings in the first exploratory graph above.
+
+### Word Pairs
+
+The final objective for this assignment is to make a word pairs graph. This way we can get an idea of what the next word will probably be given the first word.
+
+That being said, lets create a bigram and trigram graph using the approach as we did earlier. 
+
+```{r}
+bigram <- train %>% tokens(what= "word") %>%tokens_ngrams(n = 2, concatenator = " ") %>% unlist %>% table() %>% sort(decreasing = T)
+
+trigram <-train %>% tokens(what= "word") %>%tokens_ngrams(n = 3, concatenator = " ") %>% unlist %>% table() %>% sort(decreasing = T)
+
+fourgram <- train %>% tokens(what= "word") %>%tokens_ngrams(n = 4, concatenator = " ") %>% unlist %>% table() %>% sort(decreasing = T)
+```
+
+Great! now let see what does this looked like, we shall make another plot to make things easier to see. 
+
+```{r}
+dfBi <- data.frame(bigram)
+dfTri <- data.frame(trigram)
+names(dfBi)[1] <- "Word"
+names(dfTri)[1] <- "Word"
+
+gBi <- ggplot(data.frame(dfBi[1:15, ]), aes(x = Word , y = Freq))+ geom_col() + labs(x = "" ,y = "Freq", title = paste("observation for two words")) + theme(axis.text.x = element_text(angle = 45))
+
+gTri <- ggplot(data.frame(dfTri[1:15, ]), aes(x = Word , y = Freq))+ geom_col() + labs(x = "" ,y = "Freq", title = paste("observation for three words")) + theme(axis.text.x = element_text(angle = 45))
+
+ggplotly(gBi)
+```
+
+Now lets see what the `trigram` looks like. 
+```{r, echo=FALSE}
+ggplotly(gTri)
+```
+
+## Conclusion and Findings
+#### So far we have gathered our resource for the task. We have also cleaned the data and removed words that are unnecessary. Next we are going to try to model our data and try to generate predictions using this cleaned data. 
